@@ -25,7 +25,7 @@ instance applicative_comp {f : Type u₁ → Type u₀} {g : Type u₂ → Type 
 : applicative (compose f g) :=
 sorry
 
-open has_map
+open nat has_map
 
 class traversable' (t : Type u → Type u) : Type (u+1) :=
   (traverse : ∀ (f : Type u → Type u) [applicative f] (α : Type u) (β : Type u),
@@ -67,34 +67,27 @@ xs.nth_le i.val i.is_lt
 def sum_of (xs : list ℕ) : Type :=
 (Σ i : fin xs.length, fin (nth' xs i))
 
-inductive expr'' (α β : Type u) : list ℕ → Type u
-| var : ∀{n}, α → expr'' n
-| bvar : ∀{n}, sum_of n → expr'' n
-| app : ∀{n}, expr'' n → expr'' n → expr'' n
-| abstr : ∀n {xs}, vector β n → expr'' (n :: xs) → expr'' xs
--- | skip : ∀n {xs}, expr'' xs → expr'' (n :: xs)
-
-def expand {α β : Type u}
-: ∀ {n : ℕ} {xs : list ℕ},
-    expr'' α β xs → expr'' α β (n :: xs) := sorry
-
-def bind {γ α β : Type u}
-: ∀ {xs : list ℕ},
-    (α → expr'' β γ xs) →
-    expr'' α γ xs → expr'' β γ xs
- | xs f (expr''.var ._ v) := f v
- | xs f (expr''.bvar ._ ._ v) := (expr''.bvar _ _ v)
- | xs f (expr''.abstr n v e) := expr''.abstr n v (bind (expand ∘ f) e)
- | xs f (expr''.app e₀ e₁) := expr''.app (bind f e₀) (bind f e₁)
-
-open nat has_map
-
-def sum_of.inl {x xs} : fin x → sum_of (x :: xs) := sorry
-def sum_of.inr {x xs} : sum_of xs → sum_of (x :: xs) := sorry
+def sum_of.inl {x xs} (n : fin x) : sum_of (x :: xs) := ⟨ (0 : fin (succ _)) , n ⟩
+def sum_of.inr {x xs} : sum_of xs → sum_of (x :: xs)
+ | ⟨ ⟨ i, P ⟩ , j ⟩ := ⟨ fin.succ ⟨ i, P ⟩ , j ⟩
 
 def split {x xs} : sum_of (x :: xs) → fin x ⊕ sum_of xs
  | ⟨ ⟨succ i,hi⟩ , j ⟩ := sum.inr ⟨ ⟨i, lt_of_succ_lt_succ hi⟩, j ⟩
  | ⟨ ⟨0,_⟩ , j ⟩ := sum.inl j
+
+def sum_of.rec {x xs r}
+  (f : fin x → r) (g : sum_of xs → r)
+  (m : sum_of (x :: xs))
+: r :=
+match split m with
+ | (sum.inr x) := g x
+ | (sum.inl y) := f y
+end
+
+def sum_of.map {x y xs ys} (f : fin x → fin y) (g : sum_of xs → sum_of ys)
+  (m : sum_of (x :: xs))
+: sum_of (y :: ys) :=
+sum_of.rec (sum_of.inl ∘ f) (sum_of.inr ∘ g) m
 
 def split' {x xs'} : ∀ {xs}, sum_of (xs ++ x :: xs') → fin x ⊕ sum_of (xs ++ xs')
  | [] s := split s
@@ -103,23 +96,69 @@ def split' {x xs'} : ∀ {xs}, sum_of (xs ++ x :: xs') → fin x ⊕ sum_of (xs 
    suffices fin x ⊕ sum_of (x' :: (xs ++ xs')), from this,
    sum.rec (sum.inr ∘ sum_of.inl) (map sum_of.inr ∘ split') (split s')
 
-def instantiate' {α β : Type u} {n : ℕ}
-  (f : fin n → α) {xs' : list ℕ}
-: ∀ xs r, r = (xs ++ n :: xs') →
-    expr'' α β r → expr'' α β (xs ++ xs')
- | xs r P (expr''.var ._ v) := (expr''.var _ v)
- | xs r P (expr''.bvar ._ ._ v) :=
-   match split' (cast (by rw P) v) with
-    | (sum.inr v') := expr''.bvar _ _ v'
-    | (sum.inl x) := expr''.var _ (f x)
-   end
- | xs r P (expr''.abstr n' v e) :=
-  expr''.abstr n' v (instantiate' (n' :: xs) _ (by simp [P]) e : expr'' α β (n' :: xs ++ xs'))
- | xs r P (expr''.app e₀ e₁) := expr''.app (instantiate' xs _ P e₀) (instantiate' xs _ P e₁)
+def insert {x xs'} (v : fin x) : ∀ xs, sum_of (xs ++ x :: xs')
+ | [] := sum_of.inl v
+ | (y :: ys) := sum_of.inr (insert ys)
+
+def divide {x xs'} : ∀ xs, sum_of (xs ++ xs') → sum_of (xs ++ x :: xs')
+ | [] := sum_of.inr
+ | (y :: ys) := sum_of.map id (divide ys)
+
+def sum_list.rec {α x xs r}
+  (f : fin x → r)
+  (g : sum_of xs ⊕ α → r)
+: sum_of (x :: xs) ⊕ α → r
+ | (sum.inl x) := match split x with
+                   | (sum.inl x) := f x
+                   | (sum.inr x) := g (sum.inl x)
+                  end
+ | (sum.inr x) := g (sum.inr x)
+
+inductive expr'' (α β : Type u) : list ℕ → Type u
+| var : ∀{n}, α → expr'' n
+| bvar : ∀{n}, sum_of n → expr'' n
+| app : ∀{n}, expr'' n → expr'' n → expr'' n
+| abstr : ∀n {xs}, vector β n → expr'' (n :: xs) → expr'' xs
+| skip : ∀n {xs}, expr'' xs → expr'' (n :: xs)
+
+def expand {α β : Type u} {n : ℕ} {xs : list ℕ}
+: expr'' α β xs → expr'' α β (n :: xs) :=
+expr''.skip n
+
+def bind {γ α α'}
+: ∀ {xs xs'},
+  expr'' α γ xs →
+  (sum_of xs ⊕ α → expr'' α' γ xs') →
+  expr'' α' γ xs'
+| xs xs' (expr''.var ._ v) f := f (sum.inr v)
+| xs xs' (expr''.bvar ._ ._ v) f := f (sum.inl v)
+| xs xs' (expr''.app e₀ e₁) f := expr''.app (bind e₀ f) (bind e₁ f)
+| xs xs' (expr''.abstr n' v e) f := expr''.abstr n' v
+  (bind e $ sum_list.rec (expr''.bvar _ _ ∘ sum_of.inl) (expr''.skip _ ∘ f))
+| (x :: xs) xs' (expr''.skip ._ e) f :=
+  bind e (λ r, f $ sum.rec (sum.inl ∘ sum_of.inr) sum.inr r)
+
+def substitute {γ α β : Type u} {xs : list ℕ}
+  (f : α → expr'' β γ xs)
+  (e : expr'' α γ xs)
+: expr'' β γ xs :=
+bind e (λ r, sum.rec_on r (expr''.bvar β γ) f)
 
 def instantiate {α β : Type u} {n : ℕ}
   (f : fin n → α) {xs : list ℕ}
-: expr'' α β (n :: xs) → expr'' α β xs
-:= instantiate' f [] _ rfl
+  (e : expr'' α β (n :: xs))
+: expr'' α β xs :=
+bind e $ λ r, sum.rec_on r (sum_of.rec (expr''.var _ ∘ f)
+                                       (expr''.bvar _ _))
+                           (expr''.var _)
+
+def abstract {α β : Type u} {n : ℕ}
+  (f : α → option (fin n)) {xs : list ℕ}
+  (e : expr'' α β xs)
+: expr'' α β (n :: xs) :=
+bind e $ λ r, sum.rec_on r (expr''.bvar _ _ ∘ sum_of.inr)
+                           (λ x, option.rec_on (f x)
+                                               (expr''.var _ x)
+                                               (expr''.bvar _ _ ∘ sum_of.inl))
 
 end lambda

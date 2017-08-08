@@ -100,6 +100,9 @@ open has_map
 -- lemma functor.id_map' {α} (f : Type u → Type v) [functor f]
 -- : (map id : f α → f α) = id :=
 -- funext functor.id_map
+lemma functor.id_map' {α} (f : Type u → Type v) [functor f]
+: (map id : f α → f α) = id :=
+funext functor.id_map
 
 lemma functor.map_comp' {α β γ} (f : Type u → Type v) [functor f]
   (g : α → β) (h : β → γ)
@@ -135,7 +138,8 @@ open has_map
 
 namespace expr
 
-def right {α β γ} (f : α → expr β) : γ ⊕ α → expr (γ ⊕ β)
+def right {α : Type u} {β : Type (max w v)} {γ : Type w}
+  (f : α → expr β) : γ ⊕ α → expr (γ ⊕ β)
   | (sum.inl x) := expr.var (sum.inl x)
   | (sum.inr e) := sum.inr <$> f e
 
@@ -191,20 +195,30 @@ lemma expr.map_bind_assoc {α β γ} (x : expr α) (f : α → β) (g : β → e
 : f <$> x >>= g = x >>= (g ∘ f) :=
 sorry
 
-#check @expr.map_bind_assoc
-
 lemma expr.bind_map_assoc {α β γ} (x : expr α) (f : β → γ) (g : α → expr β)
 : x >>= (λ i, f <$> g i) = f <$> (x >>= g) :=
 sorry
 
-#check @expr.bind_map_assoc
-
-lemma expr.bind_map_inr_eq_map_inr_bind {α} {β γ : Type v}
+lemma expr.bind_map_inr_eq_map_inr_bind {α β : Type (max u v)} {γ : Type u}
   (x : expr α) (g : α → expr β)
 : sum.inr <$> x >>= right g = (sum.inr <$> (x >>= g) : expr (γ ⊕ β)) :=
 by simp [expr.map_bind_assoc,right,function.comp,expr.bind_map_assoc]
 
-lemma expr.bind_assoc {α β γ} (x : expr α) (f : α → expr β) (g : β → expr γ)
+lemma option_id_map (α n) : option.map id = @id (fin n ⊕ α) :=
+functor.id_map' _
+
+lemma expr.id_map {α}(e : expr α)
+: id <$> e = e :=
+begin
+  induction e
+  ; simp [has_map.map,expr.map,option_id_map] at *,
+  all_goals { simp [ih_1] },
+  all_goals { simp [ih_2] },
+  all_goals { simp [ih_3] },
+end
+
+lemma expr.bind_assoc {α β : Type (u)} {γ : Type (u)}
+  (x : expr α) (f : α → expr β) (g : β → expr γ)
 : x >>= f >>= g = x >>= (λ i, f i >>= g) :=
 begin
   unfold has_bind.bind at *,
@@ -215,23 +229,12 @@ begin
     apply congr_arg,
     apply congr_arg,
     apply funext, intro x, cases x with x x, refl,
-    unfold right,
-    apply @expr.bind_map_inr_eq_map_inr_bind β γ _ (f x) g,
-    have H := expr.map_bind_assoc (f x) sum.inr (right g : fin 2 ⊕ β → expr (fin 2 ⊕ γ)),
-    have H' := expr.bind_map_assoc (f x) sum.inr g,
-    unfold has_bind.bind at H H',
-    simp [H,function.comp,right],
-    apply H' },
+    apply @expr.bind_map_inr_eq_map_inr_bind _ _ (fin 2) (f x) g },
   case expr.abs v t e
   { simp [bind,ih_1],
     apply congr_arg, apply congr_arg,
     apply funext, intro x, cases x with x x, refl,
-    unfold right,
-    have H := expr.map_bind_assoc (f x) sum.inr (right g : fin 1 ⊕ β → expr (fin 1 ⊕ γ)),
-    have H' := expr.bind_map_assoc (f x) sum.inr g,
-    unfold has_bind.bind function.comp at H H',
-    simp [H,function.comp],
-    apply H' },
+    apply @expr.bind_map_inr_eq_map_inr_bind _ _ (fin 1) (f x) g },
   case expr.app v e₀ e₁
   { simp [bind,ih_1,ih_2], },
   case expr.bind' v n ts bs e
@@ -241,13 +244,11 @@ begin
       apply congr_arg,
       apply funext, intro j,
       cases j with j j, refl,
-      have H  := expr.map_bind_assoc (f j) sum.inr (right g : fin (succ n) ⊕ β → expr (fin (succ n) ⊕ γ)),
-      have H' := expr.bind_map_assoc (f j) sum.inr g,
-      unfold has_bind.bind function.comp at H H',
-      simp [right,H], apply H' },
+      apply @expr.bind_map_inr_eq_map_inr_bind _ _ (fin (succ n)) (f j) g },
     { apply funext, intro i,
       cases i with i i, refl,
-      unfold right, } },
+      unfold right,
+      apply @expr.bind_map_inr_eq_map_inr_bind _ _ (fin (succ n)) (f i) g, } },
 end
 
 lemma bind_pure_comp_eq_map {α β : Type u} (f : α → β) (x : expr α)
@@ -257,27 +258,33 @@ begin
   induction x ; intros β f
   ; try { refl }
   ; unfold has_bind.bind bind at *,
-  { simp [ih_1,ih_2,expr.map_case],
+  { simp [ih_1,ih_2,right_var_eq_var_comp_map,has_map.map,expr.map],
     apply congr_arg,
-    rw [← ih_3 (has_map.map f),right_var_eq_var_comp_map] },
-  { simp [right_var_eq_var_comp_map,ih_1], },
-  { simp [ih_1,ih_2], },
-  { simp [right_var_eq_var_comp_map,ih_1,ih_2], }
+    rw [ih_3], refl },
+  { simp [right_var_eq_var_comp_map,ih_1], refl },
+  { simp [ih_1,ih_2], refl },
+  { simp [right_var_eq_var_comp_map,ih_1,ih_2], refl }
 end
 
 instance : monad expr :=
 { pure := λ α, expr.var
 , bind := @expr.bind
 , map := @expr.map
-, id_map := @id_map
+, id_map := @expr.id_map
 , bind_pure_comp_eq_map := @bind_pure_comp_eq_map
 , pure_bind := @expr.pure_bind
 , bind_assoc := @expr.bind_assoc
 }
 
-def mk_local {α γ} (t : γ) (Γ : α → γ) : fin 1 ⊕ α → γ
-  | (sum.inr x) := Γ x
-  | (sum.inl x) := t
+def split_max {n} : fin (succ n) → option (fin n)
+| ⟨i,_⟩ := if h : i < n then some ⟨i,h⟩
+                        else none
+
+def mk_local {n γ} (t : γ) (Γ : fin n → γ) (i : fin (succ n)) : γ :=
+match split_max i with
+ | none := t
+ | (some i) := Γ i
+end
 
 def add_local {v γ} (t : γ) (Γ : v → γ) : fin 1 ⊕ v → γ
   | (sum.inr v) := Γ v
@@ -323,7 +330,7 @@ inductive has_type : ∀ {v}, (v → type) → expr v → type → Prop
           (e : expr (fin (succ n) ⊕ v)) (t : type),
        (∀ l, has_type (Γ' << Γ) (ls l) (Γ' l)) →
        has_type (Γ' << Γ) e t →
-       has_type Γ (expr.bind' Γ' ls e) t
+       has_type Γ (expr.bind' _ Γ' ls e) t
 
 notation g` ⊢ `:50 e` :: `:0 t := has_type g e t
 
@@ -354,10 +361,6 @@ begin
     apply ih_2  (Γ' << Γ)
     ; assumption }
 end
-
-def split_max {n} : fin (succ n) → option (fin n)
-| ⟨i,_⟩ := if h : i < n then some ⟨i,h⟩
-                        else none
 
 def insert_last {n v} (e : expr $ fin n ⊕ v) : fin (succ n) ⊕ v → expr (fin n ⊕ v)
 | (sum.inl i) := match split_max i with
@@ -407,12 +410,12 @@ inductive small_step : ∀ {v}, (v → expr v) → expr v → expr v → Prop
           (ls : fin (succ n) → expr (fin (succ n) ⊕ v))
           (e e' : expr (fin (succ n) ⊕ v)),
        small_step (ls << (has_map.map sum.inr ∘ Γ)) e e' →
-       small_step Γ (expr.bind' Γ' ls e) (expr.bind' Γ' ls e')
+       small_step Γ (expr.bind' _ Γ' ls e) (expr.bind' _ Γ' ls e')
   | bind' : ∀ {v} (Γ : v → expr v) {n : ℕ}
           (Γ' : fin (succ n) → type)
           (ls : fin (succ n) → expr (fin (succ n) ⊕ v))
           (e : expr v),
-       small_step Γ (expr.bind' Γ' ls $ sum.inr <$> e) e
+       small_step Γ (expr.bind' _ Γ' ls $ sum.inr <$> e) e
 
 notation g` ⊧ `e` ~> `t := small_step g e t
 
@@ -463,7 +466,7 @@ notation g` ⊧ `e` ~>⁺ `t := whnf_eval g e t
 -- deterministic evaluation
 
 theorem map_preserves_types {var var'}
-  {Γ : var → type} {Γ' : var' → type}
+  (Γ : var → type) (Γ' : var' → type)
   {e : expr var} {t : type}
   {sub : var → var'}
   (He : Γ ⊢ e :: t)
@@ -472,7 +475,7 @@ theorem map_preserves_types {var var'}
 sorry
 
 theorem bind_preserves_types {var var'}
-  {Γ : var → type} {Γ' : var' → type}
+  (Γ : var → type) (Γ' : var' → type)
   {e : expr var} {t : type}
   {sub : var → expr var'}
   (He : Γ ⊢ e :: t)
@@ -500,7 +503,7 @@ begin
       intro v,
       cases v with v v ; unfold right,
       { apply has_type.var },
-      { apply map_preserves_types, apply Hsub,
+      { apply map_preserves_types Γ', apply Hsub,
         intro, refl } } },
   case expr.abs
   { cases He,
@@ -530,21 +533,28 @@ begin
         intro, refl } } },
 end
 
-theorem subst_last_preserves_types {n var} {Γ : var → type}
-  {e : expr (fin (succ n) ⊕ var)} {t : type}
+theorem subst_last_preserves_types {n var}
+  {Γ : var → type}
+  {Γ' : fin n → type}
+  {e : expr (fin (succ n) ⊕ var)}
+  {t : type}
   {e' : expr var} (t' : type)
-  (He : (_ <+ _) ⊢ e :: t)
+  (He : ((t' <| Γ') << Γ) ⊢ e :: t)
   (He' : Γ ⊢ e' :: t')
-: (_ << _) ⊢ subst_last e' e :: t :=
+: (Γ' << Γ) ⊢ subst_last e' e :: t :=
 begin
   unfold subst_last,
-  apply bind_preserves_types He,
+  apply bind_preserves_types _ _ He,
   intro v,
   cases v with v v ; unfold insert_last,
   { destruct (split_max v),
     { intros h, simp [h,insert_last._match_1],
-      apply map_preserves_types, apply He', intro, refl },
-    { intro i, apply i.elim0 } },
+      apply map_preserves_types Γ,
+      simp [add_locals,mk_local,h],
+      apply He', intro, refl },
+    { intros i h,
+      simp [h,insert_last._match_1,add_locals,mk_local,h],
+      apply has_type.var } },
   { apply has_type.var }
 end
 
@@ -556,8 +566,8 @@ theorem subst_one_preserves_types {var} {Γ : var → type}
 : Γ ⊢ subst_one e' e :: t :=
 begin
   unfold subst_one,
-  apply map_preserves_types,
-  apply subst_last_preserves_types _ He,
+  apply map_preserves_types (fin.elim0 << Γ) _,
+  apply subst_last_preserves_types _ _ He,
   apply He',
   intro, cases v with v v,
   apply v.elim0,
