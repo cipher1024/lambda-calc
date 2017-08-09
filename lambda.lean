@@ -1,7 +1,8 @@
 
 import data.vector
+import .lens
 
-universes u u₀ u₁ u₂
+universes u u₀ u₁ u₂ u₃
 
 namespace lambda
 
@@ -12,82 +13,6 @@ inductive expr : Type u → Type (u+1)
  | var : ∀ {var : Type u}, var → expr var
  | app : ∀ {var : Type u}, expr var → expr var → expr var
  | abstr : ∀ {var : Type u}, expr (option var) → expr var
-
-structure identity (α : Type u) : Type u :=
-  (run : α)
-
-structure compose (f : Type u₁ → Type u₀) (g : Type u₂ → Type u₁) (α : Type u₂) : Type u₀ :=
-  (run : f (g α))
-
-instance : monad identity :=
- { bind := λ α β x f, f x.run
- , pure := λ α, identity.mk
- , id_map := λ α ⟨ x ⟩, rfl
- , bind_assoc := λ α β γ ⟨ x ⟩ f g, rfl
- , pure_bind := λ α β x f, rfl }
-
-instance {f : Type u₁ → Type u₀} {g : Type u₂ → Type u₁}
-  [has_pure f] [has_pure g] : has_pure (compose f g) :=
- { pure := λ α x, ⟨ pure $ pure x ⟩ }
-
-instance {f : Type u₁ → Type u₀} {g : Type u₂ → Type u₁}
- [has_pure f] [has_seq f] [has_seq g] : has_seq (compose f g) :=
- { seq := λ α β ⟨ f ⟩ ⟨ x ⟩, ⟨ pure has_seq.seq <*> f <*> x ⟩ }
-
-section applicative
-
-open applicative has_map functor
-
-lemma id_map' {f : Type u → Type u₀} [functor f]
-: ∀ {α : Type u}, map id = (id : f α → f α) :=
-by { introv, apply funext, intro, apply id_map }
-
-lemma pure_seq_eq_map' {f : Type u → Type u₀} [applicative f]
-: ∀ {α β : Type u} (g : α → β), (has_seq.seq $ has_pure.pure _ g) = (map g : f α → f β) :=
-by { introv, apply funext, intro, apply pure_seq_eq_map }
-
-instance applicative_comp {f : Type u₁ → Type u₀} {g : Type u₂ → Type u₁}
-  [applicative f] [applicative g]
-: applicative (compose f g) :=
- { pure := @pure _ _
- , seq := @has_seq.seq _ _
- , seq_assoc :=
-   begin
-     introv, cases x with x, cases h with h₀, cases g_1 with h₁,
-     simp [pure,has_pure.pure,has_seq.seq,has_seq._match_2,has_seq._match_1],
-     apply congr_arg, simp [seq_assoc],
-     simp [pure_seq_eq_map'],
-     simp [seq_pure,map_pure],
-     repeat { rw ← map_comp }, unfold function.comp, tactic.congr,
-     simp [seq_assoc,pure_seq_eq_map],
-   end
- , seq_pure :=
-   begin
-     introv, cases g_1 with h,
-     simp [pure,has_pure.pure,has_seq.seq],
-     simp [has_seq._match_2,has_seq._match_1],
-     simp [pure_seq_eq_map,seq_pure,map_pure],
-     rw ← map_comp, simp [function.comp,seq_pure,pure_seq_eq_map'],
-   end
- , map_pure :=
-   begin
-     introv,
-     simp [pure,has_pure.pure,has_seq.seq,has_seq._match_2,has_seq._match_1],
-     simp [pure_seq_eq_map,map_pure],
-   end
- , pure_seq_eq_map :=
-   begin
-     introv, cases x with x,
-     simp,
-   end
- , id_map :=
-   begin
-     introv, cases x with x,
-     simp [has_seq.seq,pure,has_pure.pure,has_seq._match_2,has_seq._match_1],
-     simp [pure_seq_eq_map,map_pure,pure_seq_eq_map',id_map'],
-   end }
-
-end applicative
 
 open nat has_map
 
@@ -138,6 +63,17 @@ def sum_of.inr {x xs} : sum_of xs → sum_of (x :: xs)
 def split {x xs} : sum_of (x :: xs) → fin x ⊕ sum_of xs
  | ⟨ ⟨succ i,hi⟩ , j ⟩ := sum.inr ⟨ ⟨i, lt_of_succ_lt_succ hi⟩, j ⟩
  | ⟨ ⟨0,_⟩ , j ⟩ := sum.inl j
+
+def join {x xs} : fin x ⊕ sum_of xs → sum_of (x :: xs)
+ | ( sum.inr ⟨ ⟨i, hi⟩, j ⟩ ) := ⟨ ⟨succ i,succ_lt_succ hi⟩ , j ⟩
+ | ( sum.inl j ) := ⟨ ⟨0,zero_lt_succ _⟩ , j ⟩
+
+open lenses
+
+def splitting {x x' xs xs'}
+: traversal (sum_of (x :: xs))   (sum_of (x' :: xs'))
+            (fin x ⊕ sum_of xs) (fin x' ⊕ sum_of xs') :=
+@iso _ _ _ _ split join
 
 def sum_of.rec {x xs r}
   (f : fin x → r) (g : sum_of xs → r)
