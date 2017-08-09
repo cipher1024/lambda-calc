@@ -6,7 +6,7 @@ universes u u₀ u₁ u₂
 namespace lambda
 
 instance {α : Type u} : has_map (sum α) :=
-sorry
+ { map := λ β γ f x, sum.rec_on x sum.inl (sum.inr ∘ f) }
 
 inductive expr : Type u → Type (u+1)
  | var : ∀ {var : Type u}, var → expr var
@@ -19,22 +19,86 @@ structure identity (α : Type u) : Type u :=
 structure compose (f : Type u₁ → Type u₀) (g : Type u₂ → Type u₁) (α : Type u₂) : Type u₀ :=
   (run : f (g α))
 
-instance : applicative identity := sorry
+instance : monad identity :=
+ { bind := λ α β x f, f x.run
+ , pure := λ α, identity.mk
+ , id_map := λ α ⟨ x ⟩, rfl
+ , bind_assoc := λ α β γ ⟨ x ⟩ f g, rfl
+ , pure_bind := λ α β x f, rfl }
+
+instance {f : Type u₁ → Type u₀} {g : Type u₂ → Type u₁}
+  [has_pure f] [has_pure g] : has_pure (compose f g) :=
+ { pure := λ α x, ⟨ pure $ pure x ⟩ }
+
+instance {f : Type u₁ → Type u₀} {g : Type u₂ → Type u₁}
+ [has_pure f] [has_seq f] [has_seq g] : has_seq (compose f g) :=
+ { seq := λ α β ⟨ f ⟩ ⟨ x ⟩, ⟨ pure has_seq.seq <*> f <*> x ⟩ }
+
+section applicative
+
+open applicative has_map functor
+
+lemma id_map' {f : Type u → Type u₀} [functor f]
+: ∀ {α : Type u}, map id = (id : f α → f α) :=
+by { introv, apply funext, intro, apply id_map }
+
+lemma pure_seq_eq_map' {f : Type u → Type u₀} [applicative f]
+: ∀ {α β : Type u} (g : α → β), (has_seq.seq $ has_pure.pure _ g) = (map g : f α → f β) :=
+by { introv, apply funext, intro, apply pure_seq_eq_map }
+
 instance applicative_comp {f : Type u₁ → Type u₀} {g : Type u₂ → Type u₁}
   [applicative f] [applicative g]
 : applicative (compose f g) :=
-sorry
+ { pure := @pure _ _
+ , seq := @has_seq.seq _ _
+ , seq_assoc :=
+   begin
+     introv, cases x with x, cases h with h₀, cases g_1 with h₁,
+     simp [pure,has_pure.pure,has_seq.seq,has_seq._match_2,has_seq._match_1],
+     apply congr_arg, simp [seq_assoc],
+     simp [pure_seq_eq_map'],
+     simp [seq_pure,map_pure],
+     repeat { rw ← map_comp }, unfold function.comp, tactic.congr,
+     simp [seq_assoc,pure_seq_eq_map],
+   end
+ , seq_pure :=
+   begin
+     introv, cases g_1 with h,
+     simp [pure,has_pure.pure,has_seq.seq],
+     simp [has_seq._match_2,has_seq._match_1],
+     simp [pure_seq_eq_map,seq_pure,map_pure],
+     rw ← map_comp, simp [function.comp,seq_pure,pure_seq_eq_map'],
+   end
+ , map_pure :=
+   begin
+     introv,
+     simp [pure,has_pure.pure,has_seq.seq,has_seq._match_2,has_seq._match_1],
+     simp [pure_seq_eq_map,map_pure],
+   end
+ , pure_seq_eq_map :=
+   begin
+     introv, cases x with x,
+     simp,
+   end
+ , id_map :=
+   begin
+     introv, cases x with x,
+     simp [has_seq.seq,pure,has_pure.pure,has_seq._match_2,has_seq._match_1],
+     simp [pure_seq_eq_map,map_pure,pure_seq_eq_map',id_map'],
+   end }
+
+end applicative
 
 open nat has_map
 
 class traversable' (t : Type u → Type u) : Type (u+1) :=
-  (traverse : ∀ (f : Type u → Type u) [applicative f] (α : Type u) (β : Type u),
+  (traverse : ∀ {f : Type u → Type u} [applicative f] {α β : Type u},
        (α → f β) → t α → f (t β))
-  (traverse_id : ∀ α, traverse identity α α identity.mk = identity.mk)
+  (traverse_id : ∀ α, @traverse _ _ α _ identity.mk = identity.mk)
   (traverse_compose : ∀ α β γ f g [applicative f] [applicative g]
      (F : γ → f β) (G : β → g α),
-       traverse (compose f g) γ α (compose.mk ∘ map G ∘ F)
-     = compose.mk ∘ map (traverse _ _ _ G) ∘ traverse _ _ _ F)
+       traverse (compose.mk ∘ map G ∘ F)
+     = compose.mk ∘ map (traverse G) ∘ traverse F)
 
 structure {v} cell (α : Type u) : Type (max u v) :=
   (get : α)
