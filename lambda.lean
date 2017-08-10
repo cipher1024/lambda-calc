@@ -1,5 +1,6 @@
 
 import data.vector
+import .applicative
 import .lens
 
 universes u u₀ u₁ u₂ u₃
@@ -9,52 +10,28 @@ namespace lambda
 instance {α : Type u} : has_map (sum α) :=
  { map := λ β γ f x, sum.rec_on x sum.inl (sum.inr ∘ f) }
 
-inductive expr : Type u → Type (u+1)
- | var : ∀ {var : Type u}, var → expr var
- | app : ∀ {var : Type u}, expr var → expr var → expr var
- | abstr : ∀ {var : Type u}, expr (option var) → expr var
-
 open nat has_map
 
-class traversable' (t : Type u → Type u) : Type (u+1) :=
+class traversable' (t : Type u → Type u) extends functor t : Type (u+1) :=
   (traverse : ∀ {f : Type u → Type u} [applicative f] {α β : Type u},
        (α → f β) → t α → f (t β))
   (traverse_id : ∀ α, @traverse _ _ α _ identity.mk = identity.mk)
   (traverse_compose : ∀ α β γ f g [applicative f] [applicative g]
      (F : γ → f β) (G : β → g α),
-       traverse (compose.mk ∘ map G ∘ F)
-     = compose.mk ∘ map (traverse G) ∘ traverse F)
-
-structure {v} cell (α : Type u) : Type (max u v) :=
-  (get : α)
-
-class {v} traversable (t : Type u → Type u₀) : Type (max v u u₀+1) :=
-  (traverse : ∀ (f : Type (max u u₀) → Type v) [applicative f] (α : Type u) (β : Type u),
-       (α → f (cell β)) → t α → f (cell.{u} (t β)))
-
-export traversable (traverse)
-
-class traversable_identity (t : Type u → Type u) extends traversable t :=
-  (traverse_id : ∀ α, traverse identity α α (identity.mk ∘ cell.mk) = identity.mk ∘ cell.mk)
-
--- class traversable_compose (t : Type u₂ → Type u₀) :=
--- --  (t₀ : traversable
---   (traverse_compose : ∀ (α : Type (u₂)) (β : Type u₁) (γ : Type u₀) f g [applicative f] [applicative g]
---      (F : γ → f (cell β)) (G : β → g (cell α)),
---        traverse _ _ _ (compose.mk ∘ map (G ∘ cell.get) ∘ _)
---      = compose.mk ∘ map _ ∘ traverse f α β F)
-
-inductive expr' (α : Type u) : ℕ → Type u
-| var : ∀{n}, α → expr' n
-| bvar : ∀{n}, fin n → expr' n
-| app : ∀{n}, expr' n → expr' n → expr' n
-| abstr : ∀{n}, expr' (n+1) → expr' n
+       traverse (compose.mk ∘ has_map.map G ∘ F)
+     = compose.mk ∘ has_map.map (traverse G) ∘ traverse F)
+  (traverse_pure_eq_map : ∀ f [applicative f] α β (F : α → β),
+       traverse (pure ∘ F) = (pure ∘ map F : t α → f (t β)))
 
 def nth' {α : Type u} (xs : list α) (i : fin xs.length) : α :=
 xs.nth_le i.val i.is_lt
 
 def sum_of (xs : list ℕ) : Type :=
 (Σ i : fin xs.length, fin (nth' xs i))
+
+inductive var (α : Type u) (xs : list ℕ) : Type u
+ | bound (v : sum_of xs) : var
+ | free (v : α) : var
 
 def sum_of.inl {x xs} (n : fin x) : sum_of (x :: xs) := ⟨ (0 : fin (succ _)) , n ⟩
 def sum_of.inr {x xs} : sum_of xs → sum_of (x :: xs)
@@ -69,11 +46,6 @@ def join {x xs} : fin x ⊕ sum_of xs → sum_of (x :: xs)
  | ( sum.inl j ) := ⟨ ⟨0,zero_lt_succ _⟩ , j ⟩
 
 open lenses
-
-def splitting {x x' xs xs'}
-: traversal (sum_of (x :: xs))   (sum_of (x' :: xs'))
-            (fin x ⊕ sum_of xs) (fin x' ⊕ sum_of xs') :=
-@iso _ _ _ _ split join
 
 def sum_of.rec {x xs r}
   (f : fin x → r) (g : sum_of xs → r)
@@ -114,51 +86,90 @@ def sum_list.rec {α x xs r}
                   end
  | (sum.inr x) := g (sum.inr x)
 
-inductive expr'' (α β : Type u) : list ℕ → Type u
-| var : ∀{n}, α → expr'' n
-| bvar : ∀{n}, sum_of n → expr'' n
-| app : ∀{n}, expr'' n → expr'' n → expr'' n
-| abstr : ∀n {xs}, vector β n → expr'' (n :: xs) → expr'' xs
-| skip : ∀n {xs}, expr'' xs → expr'' (n :: xs)
+def var.rec' {α : Type u} {v : ℕ} {vs : list ℕ} {r} (f : fin v → r) (g : var α vs → r)
+: var α (v :: vs) → r
+ | (var.bound ._ v) := sum_of.rec f (g ∘ var.bound _) v
+ | (var.free ._ v) := g $ var.free _ v
+
+def var.mk_bound {α : Type u} {v : ℕ} {vs : list ℕ} : fin v → var α (v :: vs) :=
+var.bound _ ∘ sum_of.inl
+
+def var.bump {α : Type u} {v : ℕ} {vs : list ℕ} (x : var α vs) : var α (v :: vs) :=
+var.rec_on x (var.bound _ ∘ sum_of.inr) (var.free _)
+
+def sum_of.splitting {x x' xs xs'} {F} [applicative F]
+: lens_like F (sum_of (x :: xs))   (sum_of (x' :: xs'))
+              (fin x ⊕ sum_of xs) (fin x' ⊕ sum_of xs') :=
+iso split join
+
+def var.splitting {α α' x xs xs'} {F} [applicative F]
+: lens_like F (var α (x :: xs)) (var α' (x :: xs'))
+              (var α xs)        (var α' xs')
+ | f := var.rec' (pure ∘ var.mk_bound) (map var.bump ∘ f)
+
+inductive expr (α β : Type u) : list ℕ → Type u
+| var : ∀{n}, var α n → expr n
+| app : ∀{n}, expr n → expr n → expr n
+| abstr : ∀n {xs}, vector β n → expr (n :: xs) → expr xs
+| skip : ∀n {xs}, expr xs → expr (n :: xs)
 
 def expand {α β : Type u} {n : ℕ} {xs : list ℕ}
-: expr'' α β xs → expr'' α β (n :: xs) :=
-expr''.skip n
+: expr α β xs → expr α β (n :: xs) :=
+expr.skip n
 
 def bind {γ α α'}
 : ∀ {xs xs'},
-  expr'' α γ xs →
-  (sum_of xs ⊕ α → expr'' α' γ xs') →
-  expr'' α' γ xs'
-| xs xs' (expr''.var ._ v) f := f (sum.inr v)
-| xs xs' (expr''.bvar ._ ._ v) f := f (sum.inl v)
-| xs xs' (expr''.app e₀ e₁) f := expr''.app (bind e₀ f) (bind e₁ f)
-| xs xs' (expr''.abstr n' v e) f := expr''.abstr n' v
-  (bind e $ sum_list.rec (expr''.bvar _ _ ∘ sum_of.inl) (expr''.skip _ ∘ f))
-| (x :: xs) xs' (expr''.skip ._ e) f :=
-  bind e (λ r, f $ sum.rec (sum.inl ∘ sum_of.inr) sum.inr r)
+  expr α γ xs →
+  (var α xs → expr α' γ xs') →
+  expr α' γ xs'
+| xs xs' (expr.var ._ v) f := f v
+| xs xs' (expr.app e₀ e₁) f := expr.app (bind e₀ f) (bind e₁ f)
+| xs xs' (expr.abstr n' v e) f := expr.abstr n' v
+  (bind e $ var.rec' (expr.var _ ∘ var.mk_bound) (expr.skip _ ∘ f) )
+| (x :: xs) xs' (expr.skip ._ e) f :=
+  bind e (f ∘ var.bump)
+
+def expr.free {α β : Type u} {xs : list ℕ} : α -> expr α β xs :=
+expr.var _ ∘ var.free _
+
+def expr.bound {α β : Type u} {xs : list ℕ} : sum_of xs -> expr α β xs :=
+expr.var _ ∘ var.bound _
+
+def expr.mk_bound {α β : Type u} {x : ℕ} {xs : list ℕ} : fin x -> expr α β (x::xs) :=
+expr.var _ ∘ var.mk_bound
 
 def substitute {γ α β : Type u} {xs : list ℕ}
-  (f : α → expr'' β γ xs)
-  (e : expr'' α γ xs)
-: expr'' β γ xs :=
-bind e (λ r, sum.rec_on r (expr''.bvar β γ) f)
+  (f : α → expr β γ xs)
+  (e : expr α γ xs)
+: expr β γ xs :=
+bind e $ λ r, var.rec_on r expr.bound f
 
 def instantiate {α β : Type u} {n : ℕ}
   (f : fin n → α) {xs : list ℕ}
-  (e : expr'' α β (n :: xs))
-: expr'' α β xs :=
-bind e $ λ r, sum.rec_on r (sum_of.rec (expr''.var _ ∘ f)
-                                       (expr''.bvar _ _))
-                           (expr''.var _)
+  (e : expr α β (n :: xs))
+: expr α β xs :=
+bind e $ λ r, var.rec' (expr.free ∘ f) (expr.var _) r
 
 def abstract {α β : Type u} {n : ℕ}
   (f : α → option (fin n)) {xs : list ℕ}
-  (e : expr'' α β xs)
-: expr'' α β (n :: xs) :=
-bind e $ λ r, sum.rec_on r (expr''.bvar _ _ ∘ sum_of.inr)
-                           (λ x, option.rec_on (f x)
-                                               (expr''.var _ x)
-                                               (expr''.bvar _ _ ∘ sum_of.inl))
+  (e : expr α β xs)
+: expr α β (n :: xs) :=
+bind e $ λ r, var.rec_on r
+              (expr.bound ∘ sum_of.inr)
+              (λ r, option.rec_on (f r) (expr.free r) expr.mk_bound)
+
+def vars_ln {β f} [applicative f] {α α'}
+: ∀ {n n'},
+  (var α n → f (var α' n')) →
+  (expr α β n → f (expr α' β n'))
+ | n n' F (expr.var ._ v) :=
+   expr.var _ <$> F v
+ | n n' F (expr.app e₀ e₁) := expr.app <$> vars_ln F e₀ <*> vars_ln F e₁
+ | (n :: ns) n' F (expr.skip ._ e) := vars_ln (F ∘ var.bump) e
+ | ns ns' F (expr.abstr n v e) := expr.abstr n v <$> vars_ln (var.splitting F) e
+
+def vars {α α' n n' β}
+: traversal (expr α β n) (expr α' β n') (var α n) (var α' n')
+ | F _inst := @vars_ln _ F _inst _ _ _ _
 
 end lambda
