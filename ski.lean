@@ -169,50 +169,125 @@ inductive ski (α : Type u) : Type u
   | I {} : ski
   | var {} : α → ski
 
+def S {t α : Type u} {n : ℕ} : expr t (ski α) n :=
+expr.var _ (var.free n ski.S)
+
 def K {t α : Type u} {n : ℕ} : expr t (ski α) n :=
 expr.var _ (var.free n ski.K)
+
+def I {t α : Type u} {n : ℕ} : expr t (ski α) n :=
+expr.var _ (var.free n ski.I)
+
+def expr.ski_var {t α : Type u} {n : ℕ} (v : var α n) : expr t (ski α) n :=
+expr.var _ $ var.rec_on v (var.free _ ∘ ski.var) (var.bound _)
+
 
 def is_free {t α : Type u} {n : ℕ} (e : expr t α (n+1))
 : option (dec_t α n e) :=
 traverse' (var.rec' none some) e
 
+section well_founded_tactics
 
+open tactic well_founded_tactics
 
+meta def unfold_size : tactic unit :=
+dunfold_target [``ski.size] {fail_if_unchanged := ff}
 
+meta def trivial_expr_size_lt : tactic unit :=
+comp_val
+<|>
+`[apply nat.zero_lt_one]
+<|>
+`[apply nat.zero_le]
+<|>
+assumption
+<|>
+`[apply nat.le_refl]
+<|>
+(do (`[apply @le_add_of_le_of_nonneg ℕ] >> trivial_expr_size_lt >> trivial_expr_size_lt)
+    <|>
+    (`[apply @le_add_of_nonneg_of_le ℕ] >> trivial_expr_size_lt >> trivial_expr_size_lt)
+    <|>
+    (`[apply nat.lt_add_of_pos_of_le_left] >> trivial_expr_size_lt >> trivial_expr_size_lt)
+    <|>
+    (`[apply nat.lt_add_of_pos_of_le_right] >> trivial_expr_size_lt >> trivial_expr_size_lt))
+<|>
+failed
+
+meta def variant_dec : tactic unit :=
+cancel_nat_add_lt >> trivial_nat_lt
+
+meta def expr_size_wf_tac : well_founded_tactics :=
+{ dec_tac := do
+    clear_internals,
+    unfold_wf_rel,
+    subst_vars,
+    process_lex (unfold_sizeof >> unfold_size >> cancel_nat_add_lt >> trivial_expr_size_lt),
+    return ()
+}
+
+end well_founded_tactics
 
 lemma nat.lt_add_of_zero_lt_right (a b : nat) (h : 0 < a) : b < a + b :=
 suffices 0 + b < a + b, by {simp at this, assumption},
 by {apply nat.add_lt_add_right, assumption}
 
-lemma nat.foo_left {a b k : ℕ}
+lemma nat.lt_add_of_pos_of_le_left {a b k : ℕ}
   (h  : 0 < k)
   (h' : a ≤ b)
-: a < k + b := sorry
+: a < k + b :=
+begin
+  apply lt_of_le_of_lt h',
+  apply nat.lt_add_of_zero_lt_right _ _ h,
+end
 
-lemma nat.foo_right {a b k : ℕ}
+lemma nat.lt_add_of_pos_of_le_right {a b k : ℕ}
   (h  : 0 < k)
   (h' : a ≤ b)
-: a < b + k := sorry
+: a < b + k :=
+begin
+  rw add_comm,
+  apply nat.lt_add_of_pos_of_le_left h h',
+end
 
-local attribute [instance] expr_wf
+def exists_eq_self {α : Sort u} (x : α) : { y // x = y } :=
+⟨ _ , rfl ⟩
 
-def to_ski {α : Type u}
-: ∀ {n}, expr (ulift unit) α n → expr (ulift empty) (ski α) n
+def abstr_to_ski {α : Type u}
+: ∀ {n}, expr (ulift empty) (ski α) (n+1) → expr (ulift empty) (ski α) n :=
+sorry
+
+def psigma_expr_wf {t α : Type u}
+: has_well_founded (@psigma ℕ $ expr t α) :=
+⟨ _ , measure_wf (λ e, size e.2) ⟩
+
+local attribute [instance] psigma_expr_wf
+
+open expr
+
+def to_ski {t α : Type u}
+: ∀ {n}, expr t α n → expr (ulift empty) (ski α) n
  | n (expr.var ._ v) := expr.var _ $ var.rec_on v (var.free _ ∘ ski.var) (var.bound _)
  | n (expr.app e₀ e₁) :=
-   have size e₀ < 1 + size e₀ + size e₁,
-     by { apply nat.lt_add_right, apply nat.foo_left, apply zero_lt_one, refl },
-   have size e₁ < 1 + size e₀ + size e₁,
-     by { apply nat.foo_left, apply nat.zero_lt_one_add, refl },
    expr.app (to_ski e₀) (to_ski e₁)
  | n (expr.abstr ._ t e) :=
    match is_free e with
-    | (some e') :=
-      have h : size e'.val < 1 + size e,
-        by { apply nat.foo_left, apply zero_lt_one, apply e'.property },
-      expr.app K (to_ski e'.val)
-    | none := sorry
+    | (some ⟨e',h⟩ ) :=
+      expr.app K (to_ski e')
+    | none :=
+      match exists_eq_self e with
+       | ⟨ (expr.var ._ v), _ ⟩ :=
+         var.rec' I (expr.app K ∘ expr.ski_var) v
+       | ⟨ (expr.app e₀ e₁), (h : e = _) ⟩ :=
+         expr.app S (expr.app (to_ski (expr.abstr _ t e₀)) (to_ski (expr.abstr _ t e₁)))
+       | ⟨ (expr.abstr ._ t' e'), (h : e = _) ⟩ :=
+         abstr_to_ski (to_ski (expr.abstr _ t' e'))
+       | ⟨ (expr.skip e'), (h : e = _) ⟩ :=
+         to_ski e'
+      end
    end
- | (n+1) (expr.skip e) := expr.skip $ to_ski e
+ | (n+1) (expr.skip e') :=
+   expr.skip $ to_ski e'
+using_well_founded  expr_size_wf_tac
 
 end ski
