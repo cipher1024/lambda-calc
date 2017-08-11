@@ -179,7 +179,6 @@ traverse' (var.rec' none some) e
 
 
 
-end well_founded_tactics
 
 lemma nat.lt_add_of_zero_lt_right (a b : nat) (h : 0 < a) : b < a + b :=
 suffices 0 + b < a + b, by {simp at this, assumption},
