@@ -254,8 +254,10 @@ def exists_eq_self {α : Sort u} (x : α) : { y // x = y } :=
 ⟨ _ , rfl ⟩
 
 def abstr_to_ski {α : Type u}
-: ∀ {n}, expr (ulift empty) (ski α) (n+1) → expr (ulift empty) (ski α) n :=
-sorry
+: ∀ {n}, expr (ulift empty) (ski α) (n+1) → expr (ulift empty) (ski α) n
+ | n (expr.var ._ v)  := var.rec' I (expr.app K ∘ expr.var _) v
+ | n (expr.app e₀ e₁) := expr.app (expr.app S (abstr_to_ski e₀)) (abstr_to_ski e₁)
+ | n (expr.skip e)    := expr.app K e
 
 def psigma_expr_wf {t α : Type u}
 : has_well_founded (@psigma ℕ $ expr t α) :=
