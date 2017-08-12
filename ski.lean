@@ -86,24 +86,6 @@ def traverse {f : Type u → Type v} [applicative f] {t α α' : Type u}
 | n n' f (expr.abstr ._ t e) := expr.abstr _ t <$> traverse (dumping f) e
 | (nat.succ n) n' f (expr.skip e) := traverse (f ∘ bump) e
 
-inductive expr.rel {t α α' : Type u} (P : ∀ {n n' : ℕ}, var α n → var α' n' → Prop)
-: ∀ {n n'}, expr t α n → expr t α' n' → Prop
-  | basis {i j} {v : var α i} {v' : var α' j} :
-         P v v' → expr.rel (expr.var _ v) (expr.var _ v')
-  | app {i j} {e₀ e₁ : expr t α i} {e₀' e₁' : expr t α' j} :
-         expr.rel e₀ e₀' →
-         expr.rel e₁ e₁' →
-         expr.rel (expr.app e₀ e₁) (expr.app e₀' e₁')
-  | abstr {i j} {x y : t} {e : expr t α $ i+1} {e' : expr t α' $ j+1} :
-         expr.rel e e' →
-         expr.rel (expr.abstr _ x e) (expr.abstr _ y e')
-  | skip {i j} {e : expr t α i} {e' : expr t α' j} :
-         expr.rel e e' →
-         expr.rel (expr.skip e) e'
-  | skip' {i j} {e : expr t α i} {e' : expr t α' j} :
-         expr.rel e e' →
-         expr.rel e (expr.skip e')
-
 def dec_t {t α : Type u} {n : ℕ} (α' : Type u) (n' : ℕ) (x : expr t α n) :=
 { y : expr t α' n' // size y ≤ size x }
 
