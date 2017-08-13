@@ -182,11 +182,11 @@ class foldable (f : Type u → Type u) extends functor f :=
 
 export foldable (size fold idx correct_fold)
 
-section
+section anamorphism
 
 parameters {F : Type u → Type u} [foldable F]
-parameters {α : Type u}
-parameters (r : α → α → Prop) (wf : well_founded r)
+parameters {α β : Type u}
+parameters {r : α → α → Prop} (wf : well_founded r)
 parameter (f : ∀ x : α, F ({ y : α // r y x }))
 
 def ana : α → fix F :=
@@ -195,4 +195,7 @@ wf.fix $ λ x ana,
     let y := @fold F _ _ (f x) j in
     ana y y.property
 
-end
+def hylo (g : F β → β) : α → β :=
+cata g ∘ ana
+
+end anamorphism
