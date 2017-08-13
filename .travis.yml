@@ -83,7 +83,7 @@ before_install:
 script:
 - lean -v || echo "success"
 - lean --path
-- export LEAN_PATH=`pwd`:$HOME/lean/bin/../lib/lean/library:$HOME/lean/bin/../library
+- export LEAN_PATH=`pwd`/lib:`pwd`:$HOME/lean/bin/../lib/lean/library:$HOME/lean/bin/../library
 - echo $LEAN_PATH
 - lean --make
 notifications:
