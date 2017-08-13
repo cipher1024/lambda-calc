@@ -1,0 +1,7 @@
+[package]
+name = "lambda-calc"
+version = "0.1"
+path = "."
+
+[dependencies]
+lean-lib = {path = "lib"}

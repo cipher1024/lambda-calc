@@ -1,13 +1,14 @@
 
+import util.data.traversable
+
 universe u
 
 inductive fix (f : Type u → Type u) : Type (u+1)
   | fix (n : ℕ) : f (ulift $ fin n) → (fin n → fix) → fix
 
-structure identity (x : Type u) : Type u :=
-  (get : x)
-
 open ulift
+
+namespace fix_examples
 
 #check fix identity
 
@@ -111,15 +112,12 @@ begin
   simp [ih_1]
 end
 
-structure compose (f : Type u → Type u) (g : Type u → Type u) (x : Type u) : Type u :=
-  (get : f (g x))
-
 inductive ntree (α : Type u) : Type u
   | node : α → list ntree → ntree
 
 #check fix (compose (prod ℕ) list)
 
-def n_node (α : Type u) : Type u → Type u := compose (prod α) list
+def n_node (α β : Type u) : Type u := compose.{u} (prod α) list β
 
 def indices_aux {n} : ∀ i, i ≤ n → list (fin n)
  | 0 P := []
@@ -171,6 +169,10 @@ begin
   admit
 end
 
+end fix_examples
+
+namespace data.fix
+
 def cata {α} {F : Type u → Type u} [has_map F] (f : F α → α) : fix F → α
  | (fix.fix β x g) := f $ (λ i, cata (g $ down i)) <$> x
 
@@ -180,7 +182,7 @@ class foldable (f : Type u → Type u) extends functor f :=
   (idx : ∀ {α} (x : f α), f (ulift $ fin (size x)))
   (correct_fold : ∀ {α} (x : f α), map (λ i, (fold x) (ulift.down i)) (idx x) = x)
 
-export foldable (size fold idx correct_fold)
+export data.fix.foldable (size fold idx correct_fold)
 
 section anamorphism
 
@@ -199,3 +201,5 @@ def hylo (g : F β → β) : α → β :=
 cata g ∘ ana
 
 end anamorphism
+
+end data.fix
