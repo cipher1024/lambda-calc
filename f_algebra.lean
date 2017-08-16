@@ -1,7 +1,7 @@
 
 import util.data.traversable
 
-universe u
+universes u v w
 
 inductive fix (f : Type u → Type u) : Type (u+1)
   | fix (n : ℕ) : f (ulift $ fin n) → (fin n → fix) → fix
@@ -173,8 +173,20 @@ end fix_examples
 
 namespace data.fix
 
-def cata {α} {F : Type u → Type u} [has_map F] (f : F α → α) : fix F → α
+section morphisms
+
+variable {m : Type u → Type v}
+variable [monad m]
+
+parameters {F : Type u → Type u}
+variables {α : Type u}
+
+def cata [has_map F] (f : F α → α) : fix F → α
  | (fix.fix β x g) := f $ (λ i, cata (g $ down i)) <$> x
+
+def catam [h : has_traverse.{v} F] (f : F α → m α) : fix F → m α
+ | (fix.fix β x g) :=
+@traverse' F h m _ (ulift (fin β)) α (λ i, up.{u} <$> catam (g $ down i)) x >>= (f ∘ down)
 
 class foldable (f : Type u → Type u) extends functor f :=
   (size : ∀ {α}, f α → ℕ)
@@ -186,10 +198,10 @@ export data.fix.foldable (size fold idx correct_fold)
 
 section anamorphism
 
-parameters {F : Type u → Type u} [foldable F]
-parameters {α β : Type u}
-parameters {r : α → α → Prop} (wf : well_founded r)
-parameter (f : ∀ x : α, F ({ y : α // r y x }))
+parameters [foldable F]
+variables {β : Type u}
+variables {r : α → α → Prop} (wf : well_founded r)
+variables (f : ∀ x : α, F ({ y : α // r y x }))
 
 def ana : α → fix F :=
 wf.fix $ λ x ana,
@@ -198,8 +210,37 @@ wf.fix $ λ x ana,
     ana y y.property
 
 def hylo (g : F β → β) : α → β :=
-cata g ∘ ana
+cata g ∘ ana wf f
+
+variable {n : Type (u+1) → Type v}
+variable [monad n]
+variables (f' : ∀ x : α, n (ulift.{u+1} (F { y : α // r y x })))
+
+def forM {m : Type v → Type w} [monad m]
+  {α : Type u} {β : Type v}
+  {n : ℕ} (f : α → m β) (ar : array α n)
+: m (array β n) := do
+xs ← monad.mapm f ar.to_list,
+let ar' := xs.to_array,
+have h : xs.length = n, from sorry,
+return $ cast (by rw h) ar'
+
+def anam : α → n (fix F) :=
+wf.fix $ λ x anam, do
+  y ← f' x,
+  let g := idx (down y),
+  let z := @fold F _ _ (down y),
+  let f : { y // r y x } → n (fix F) := (λ i, anam i.val i.property),
+  z' ← forM f ⟨ z ⟩,
+  return $ fix.fix _ g z'.data
+
+def hylom [has_traverse.{v} F]
+  (g : F β → n (ulift.{u+1} β)) (x : α)
+: n (ulift.{u+1} β) :=
+anam wf f' x >>= ulift_t.run ∘ catam (ulift_t.mk ∘ g)
 
 end anamorphism
+
+end morphisms
 
 end data.fix
