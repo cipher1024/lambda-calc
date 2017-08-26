@@ -5,3 +5,4 @@ path = "."
 
 [dependencies]
 lean-lib = {path = "lib"}
+mathlib = {git = "https://github.com/leanprover/mathlib", rev = "7c72de2be1a07dcd00d343d720162c105d48107b"}
