@@ -1,8 +1,9 @@
 [package]
 name = "lambda-calc"
 version = "0.1"
+lean_version = "master"
 path = "."
 
 [dependencies]
-mathlib = {git = "https://github.com/leanprover/mathlib", rev = "7c72de2be1a07dcd00d343d720162c105d48107b"}
-lean-lib = {git = "https://github.com/unitb/lean-lib", rev = "8ed5d87f256fa929156c7dbed14875e5aecd402f"}
+mathlib = {git = "https://github.com/leanprover/mathlib", rev = "bf58bf4451f26b88c776586865e6840cd1495f64"}
+lean-lib = {git = "https://github.com/unitb/lean-lib", rev = "dbd7075b4d0db7956d91451ff05d891b90caaa10"}
